@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import ExportDialog from './collaboration/ExportDialog.vue';
+import ImportDialog from './collaboration/ImportDialog.vue';
+import { loadScanHistory } from '@/composables/useScanPersistence';
 
 interface ScanTask {
   id: string;
@@ -13,13 +16,50 @@ interface ScanTask {
 }
 
 const scans = ref<ScanTask[]>([]);
+const showExportDialog = ref(false);
+const showImportDialog = ref(false);
 
 onMounted(async () => {
   try {
-    const scanList = await invoke<ScanTask[]>('list_scans');
-    scans.value = scanList;
+    // 1. 從資料庫載入歷史記錄
+    try {
+      const dbScans = await loadScanHistory();
+      // 轉換資料庫格式到前端格式
+      const historicalScans: ScanTask[] = dbScans.map(scan => ({
+        id: scan.id,
+        target_url: scan.target_url,
+        scan_type: scan.scan_type,
+        status: scan.status as 'pending' | 'running' | 'completed' | 'failed',
+        started_at: scan.started_at || undefined,
+        completed_at: scan.completed_at || undefined,
+        created_at: scan.created_at,
+      }));
+      scans.value = historicalScans;
+      console.log(`✅ 從資料庫載入 ${historicalScans.length} 筆歷史記錄`);
+    } catch (dbError) {
+      console.warn('無法從資料庫載入歷史:', dbError);
+    }
+
+    // 2. 從記憶體獲取當前正在執行的掃描
+    try {
+      const runtimeScans = await invoke<ScanTask[]>('list_scans');
+
+      // 合併資料：runtime 掃描優先（可能有更新的狀態）
+      const scanMap = new Map<string, ScanTask>();
+
+      // 先加入歷史記錄
+      scans.value.forEach(scan => scanMap.set(scan.id, scan));
+
+      // runtime 掃描覆蓋（如果有的話）
+      runtimeScans.forEach(scan => scanMap.set(scan.id, scan));
+
+      scans.value = Array.from(scanMap.values());
+      console.log(`✅ 總共載入 ${scans.value.length} 筆掃描記錄`);
+    } catch (runtimeError) {
+      console.warn('無法從記憶體載入掃描:', runtimeError);
+    }
   } catch (error) {
-    console.error('Failed to load scans:', error);
+    console.error('載入掃描失敗:', error);
   }
 });
 
@@ -59,6 +99,26 @@ const recentScans = computed(() =>
       </svg>
       統計儀表板
     </h2>
+
+    <!-- 協作工具列 -->
+    <div class="flex items-center gap-3 p-4 bg-gray-800 border border-gray-700 rounded-lg">
+      <div class="flex-1">
+        <h3 class="font-mono font-semibold text-gray-300 text-sm">🤝 離線協作</h3>
+        <p class="text-xs text-gray-500 mt-1">匯出/匯入加密資料進行團隊協作</p>
+      </div>
+      <button
+        @click="showExportDialog = true"
+        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white border border-blue-500 rounded font-mono text-sm transition-colors"
+      >
+        🔐 匯出資料
+      </button>
+      <button
+        @click="showImportDialog = true"
+        class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-100 border border-gray-600 rounded font-mono text-sm transition-colors"
+      >
+        📥 匯入資料
+      </button>
+    </div>
 
     <!-- 統計卡片 -->
     <div class="grid grid-cols-4 gap-4">
@@ -155,5 +215,9 @@ const recentScans = computed(() =>
         </div>
       </div>
     </div>
+
+    <!-- Collaboration Dialogs -->
+    <ExportDialog v-model="showExportDialog" />
+    <ImportDialog v-model="showImportDialog" />
   </div>
 </template>

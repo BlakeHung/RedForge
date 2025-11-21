@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { saveScanToDatabase } from '@/composables/useScanPersistence';
 
 interface ScanTask {
   id: string;
@@ -37,7 +38,7 @@ const startScan = async () => {
       scanType: scanType.value,
     });
 
-    console.log('Scan started:', taskId);
+    console.log('🚀 掃描已啟動:', taskId);
 
     // 輪詢掃描狀態
     const pollInterval = setInterval(async () => {
@@ -53,7 +54,17 @@ const startScan = async () => {
           isScanning.value = false;
 
           if (task.status === 'completed') {
-            console.log('Scan completed');
+            console.log('✅ 掃描完成，開始保存到資料庫...');
+
+            // 自動保存到資料庫
+            try {
+              await saveScanToDatabase(taskId);
+              console.log('✅ 掃描結果已保存到資料庫');
+            } catch (dbError) {
+              console.error('⚠️  保存到資料庫失敗（掃描結果仍在記憶體中）:', dbError);
+            }
+          } else {
+            console.log('⚠️  掃描失敗:', task.status);
           }
         }
       } catch (err) {

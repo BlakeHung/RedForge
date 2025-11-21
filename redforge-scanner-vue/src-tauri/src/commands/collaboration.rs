@@ -133,14 +133,12 @@ pub async fn export_scan_data(
     include_annotations: bool,
     include_assets: bool,
     since: Option<String>,
+    state: tauri::State<'_, crate::commands::scan::ScanState>,
 ) -> Result<ExportData, String> {
     // Convert since string to DateTime if provided
     let since_dt: Option<DateTime<Utc>> = since
         .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
         .map(|dt| dt.with_timezone(&Utc));
-
-    // Mock data for now - in production, fetch from database
-    // TODO: Implement actual database queries
 
     let metadata = ExportMetadata {
         version: "1.0.0".to_string(),
@@ -152,53 +150,106 @@ pub async fn export_scan_data(
         checksum: None,
     };
 
-    // Mock scans
+    // Get real scan data from state
+    let tasks = state.current_tasks.lock().await;
+    let results = state.scan_results.lock().await;
+
+    // Filter scans based on scan_ids or since
     let mut scans = Vec::new();
-    if let Some(ids) = scan_ids {
-        for id in ids {
-            scans.push(ExportScanTask {
-                id: id.clone(),
-                name: format!("Scan {}", id),
-                target: "https://example.com".to_string(),
-                status: "completed".to_string(),
-                created_at: Utc::now().to_rfc3339(),
-                started_at: Some(Utc::now().to_rfc3339()),
-                completed_at: Some(Utc::now().to_rfc3339()),
-                created_by: "user".to_string(),
-            });
+    let mut findings = Vec::new();
+
+    for task in tasks.iter() {
+        // Filter by scan_ids if provided
+        if let Some(ref ids) = scan_ids {
+            if !ids.contains(&task.id) {
+                continue;
+            }
+        }
+
+        // Filter by since date if provided
+        if let Some(ref since_date) = since_dt {
+            if &task.created_at < since_date {
+                continue;
+            }
+        }
+
+        // Add scan task
+        scans.push(ExportScanTask {
+            id: task.id.clone(),
+            name: format!("{} - {}", task.scan_type.to_string(), task.target_url),
+            target: task.target_url.clone(),
+            status: task.status.to_string(),
+            created_at: task.created_at.to_rfc3339(),
+            started_at: task.started_at.map(|dt| dt.to_rfc3339()),
+            completed_at: task.completed_at.map(|dt| dt.to_rfc3339()),
+            created_by: "user".to_string(),
+        });
+
+        // Get scan results/findings
+        if !include_findings_only {
+            if let Some(report) = results.get(&task.id) {
+                for vuln in &report.vulnerabilities {
+                    findings.push(ExportFinding {
+                        id: vuln.id.clone(),
+                        scan_id: task.id.clone(),
+                        finding_type: format!("{:?}", vuln.result_type).to_lowercase(),
+                        severity: vuln.severity.as_ref().map(|s| s.to_string()).unwrap_or("info".to_string()),
+                        title: vuln.title.clone(),
+                        description: vuln.description.clone().unwrap_or_default(),
+                        affected_url: Some(task.target_url.clone()),
+                        evidence: vuln.raw_data.clone(),
+                        recommendation: None,
+                        discovered_at: vuln.created_at.to_rfc3339(),
+                        discovered_by: "redforge".to_string(),
+                        cvss_score: None,
+                        cve_id: None,
+                    });
+                }
+            }
         }
     }
 
-    // Mock findings
-    let mut findings = Vec::new();
-    if !scans.is_empty() && !include_findings_only {
-        findings.push(ExportFinding {
-            id: uuid::Uuid::new_v4().to_string(),
-            scan_id: scans[0].id.clone(),
-            finding_type: "vulnerability".to_string(),
-            severity: "high".to_string(),
-            title: "SQL Injection".to_string(),
-            description: "Potential SQL injection vulnerability detected".to_string(),
-            affected_url: Some("https://example.com/login".to_string()),
-            evidence: Some("payload: ' OR 1=1--".to_string()),
-            recommendation: Some("Use parameterized queries".to_string()),
-            discovered_at: Utc::now().to_rfc3339(),
-            discovered_by: "redforge".to_string(),
-            cvss_score: Some(8.5),
-            cve_id: None,
-        });
-    }
-
-    // Optional annotations
+    // Optional annotations (empty for now)
     let annotations = if include_annotations {
         Some(Vec::new())
     } else {
         None
     };
 
-    // Optional assets
+    // Optional assets (extract from scan results)
     let assets = if include_assets {
-        Some(Vec::new())
+        let mut asset_list = Vec::new();
+        for task in scans.iter() {
+            if let Some(report) = results.get(&task.id) {
+                // Extract hostname from URL
+                let hostname = task.target
+                    .trim_start_matches("https://")
+                    .trim_start_matches("http://")
+                    .split('/')
+                    .next()
+                    .unwrap_or(&task.target)
+                    .to_string();
+
+                // Collect technologies
+                let technologies: Vec<String> = report.technologies
+                    .iter()
+                    .map(|t| t.technology_name.clone())
+                    .collect();
+
+                if !technologies.is_empty() || report.ssl_analysis.is_some() {
+                    asset_list.push(Asset {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        hostname: hostname.clone(),
+                        ip_address: None,
+                        ports: None,
+                        services: None,
+                        technologies: Some(technologies),
+                        discovered_at: task.created_at.clone(),
+                    });
+                }
+            }
+        }
+        Some(asset_list)
     } else {
         None
     };
@@ -284,29 +335,147 @@ pub async fn import_scan_data(
     data: ExportData,
     skip_duplicates: bool,
     merge_strategy: String,
+    state: tauri::State<'_, crate::commands::scan::ScanState>,
 ) -> Result<ImportResult, String> {
-    // TODO: Implement actual database insertions
-    // For now, return mock result
+    use crate::commands::scan::ScanReport;
+    use crate::models::*;
 
-    let imported = ImportCounts {
-        scans: data.scans.len() as i32,
-        findings: data.findings.len() as i32,
-        annotations: data.annotations.as_ref().map(|a| a.len() as i32).unwrap_or(0),
-        assets: data.assets.as_ref().map(|a| a.len() as i32).unwrap_or(0),
-    };
-
-    let skipped = ImportCounts {
+    let mut imported_counts = ImportCounts {
         scans: 0,
         findings: 0,
         annotations: 0,
         assets: 0,
     };
 
+    let mut skipped_counts = ImportCounts {
+        scans: 0,
+        findings: 0,
+        annotations: 0,
+        assets: 0,
+    };
+
+    let mut errors = Vec::new();
+
+    // Get current state
+    let mut tasks = state.current_tasks.lock().await;
+    let mut results = state.scan_results.lock().await;
+
+    // Import scans
+    for export_scan in data.scans {
+        // Check if scan already exists
+        if skip_duplicates && tasks.iter().any(|t| t.id == export_scan.id) {
+            skipped_counts.scans += 1;
+            continue;
+        }
+
+        // Parse scan type
+        let scan_type = match export_scan.name.to_lowercase() {
+            n if n.contains("full") => ScanType::Full,
+            n if n.contains("quick") => ScanType::Quick,
+            n if n.contains("vulnerability") => ScanType::Vulnerability,
+            n if n.contains("port") => ScanType::Port,
+            n if n.contains("ssl") => ScanType::Ssl,
+            n if n.contains("headers") => ScanType::Headers,
+            _ => ScanType::Full,
+        };
+
+        // Parse scan status
+        let status = match export_scan.status.as_str() {
+            "pending" => ScanStatus::Pending,
+            "running" => ScanStatus::Running,
+            "completed" => ScanStatus::Completed,
+            "failed" => ScanStatus::Failed,
+            _ => ScanStatus::Completed,
+        };
+
+        // Parse timestamps
+        let created_at = DateTime::parse_from_rfc3339(&export_scan.created_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now());
+
+        let started_at = export_scan.started_at
+            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+
+        let completed_at = export_scan.completed_at
+            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+
+        // Create ScanTask
+        let task = ScanTask {
+            id: export_scan.id.clone(),
+            target_url: export_scan.target,
+            scan_type,
+            status,
+            started_at,
+            completed_at,
+            created_at,
+        };
+
+        // Collect findings for this scan
+        let scan_findings: Vec<ScanResult> = data.findings
+            .iter()
+            .filter(|f| f.scan_id == export_scan.id)
+            .map(|f| {
+                let result_type = match f.finding_type.as_str() {
+                    "port" => ResultType::Port,
+                    "vulnerability" => ResultType::Vulnerability,
+                    "ssl" => ResultType::Ssl,
+                    "header" => ResultType::Header,
+                    "technology" => ResultType::Technology,
+                    _ => ResultType::Vulnerability,
+                };
+
+                let severity = match f.severity.as_str() {
+                    "critical" => Some(Severity::Critical),
+                    "high" => Some(Severity::High),
+                    "medium" => Some(Severity::Medium),
+                    "low" => Some(Severity::Low),
+                    "info" => Some(Severity::Info),
+                    _ => Some(Severity::Info),
+                };
+
+                let discovered_at = DateTime::parse_from_rfc3339(&f.discovered_at)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now());
+
+                ScanResult {
+                    id: f.id.clone(),
+                    task_id: f.scan_id.clone(),
+                    result_type,
+                    severity,
+                    title: f.title.clone(),
+                    description: Some(f.description.clone()),
+                    raw_data: f.evidence.clone(),
+                    created_at: discovered_at,
+                }
+            })
+            .collect();
+
+        // Create ScanReport
+        let report = ScanReport {
+            task: task.clone(),
+            headers: Vec::new(), // TODO: Extract from findings if available
+            ssl_analysis: None,  // TODO: Extract from findings if available
+            technologies: Vec::new(), // TODO: Extract from assets if available
+            vulnerabilities: scan_findings.clone(),
+        };
+
+        // Add to state
+        tasks.push(task);
+        results.insert(export_scan.id.clone(), report);
+
+        imported_counts.scans += 1;
+        imported_counts.findings += scan_findings.len() as i32;
+    }
+
+    // TODO: Import annotations and assets
+
     Ok(ImportResult {
         success: true,
-        imported,
-        skipped,
-        errors: Vec::new(),
+        imported: imported_counts,
+        skipped: skipped_counts,
+        errors,
     })
 }
 

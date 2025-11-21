@@ -23,6 +23,19 @@ pub enum ScanType {
     Headers,
 }
 
+impl std::fmt::Display for ScanType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ScanType::Full => write!(f, "full"),
+            ScanType::Quick => write!(f, "quick"),
+            ScanType::Vulnerability => write!(f, "vulnerability"),
+            ScanType::Port => write!(f, "port"),
+            ScanType::Ssl => write!(f, "ssl"),
+            ScanType::Headers => write!(f, "headers"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ScanStatus {
@@ -30,6 +43,29 @@ pub enum ScanStatus {
     Running,
     Completed,
     Failed,
+}
+
+impl std::fmt::Display for ScanStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ScanStatus::Pending => write!(f, "pending"),
+            ScanStatus::Running => write!(f, "running"),
+            ScanStatus::Completed => write!(f, "completed"),
+            ScanStatus::Failed => write!(f, "failed"),
+        }
+    }
+}
+
+impl std::fmt::Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Severity::Critical => write!(f, "critical"),
+            Severity::High => write!(f, "high"),
+            Severity::Medium => write!(f, "medium"),
+            Severity::Low => write!(f, "low"),
+            Severity::Info => write!(f, "info"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

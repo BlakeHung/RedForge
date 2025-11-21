@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { loadScanHistory } from '@/composables/useScanPersistence';
 
 interface ScanTask {
   id: string;
@@ -21,8 +22,47 @@ onMounted(() => {
 
 const loadScans = async () => {
   try {
-    const scanList = await invoke<ScanTask[]>('list_scans');
-    scans.value = scanList.reverse(); // 最新的在前面
+    console.log('🔍 開始載入掃描歷史...');
+
+    // 1. 從資料庫載入歷史記錄
+    try {
+      const dbScans = await loadScanHistory();
+      // 轉換資料庫格式到前端格式
+      const historicalScans: ScanTask[] = dbScans.map(scan => ({
+        id: scan.id,
+        target_url: scan.target_url,
+        scan_type: scan.scan_type,
+        status: scan.status as 'pending' | 'running' | 'completed' | 'failed',
+        started_at: scan.started_at || undefined,
+        completed_at: scan.completed_at || undefined,
+        created_at: scan.created_at,
+      }));
+      scans.value = historicalScans;
+      console.log(`✅ 從資料庫載入 ${historicalScans.length} 筆歷史記錄`);
+    } catch (dbError) {
+      console.warn('無法從資料庫載入歷史:', dbError);
+    }
+
+    // 2. 從記憶體獲取當前正在執行的掃描
+    try {
+      const runtimeScans = await invoke<ScanTask[]>('list_scans');
+
+      // 合併資料：runtime 掃描優先（可能有更新的狀態）
+      const scanMap = new Map<string, ScanTask>();
+
+      // 先加入歷史記錄
+      scans.value.forEach(scan => scanMap.set(scan.id, scan));
+
+      // runtime 掃描覆蓋（如果有的話）
+      runtimeScans.forEach(scan => scanMap.set(scan.id, scan));
+
+      scans.value = Array.from(scanMap.values()).reverse(); // 最新的在前面
+      console.log(`✅ 總共載入 ${scans.value.length} 筆掃描記錄`);
+    } catch (runtimeError) {
+      console.warn('無法從記憶體載入掃描:', runtimeError);
+      // 如果記憶體載入失敗，至少顯示資料庫的資料
+      scans.value = scans.value.reverse();
+    }
   } catch (error) {
     console.error('Failed to load scans:', error);
   } finally {

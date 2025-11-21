@@ -1,6 +1,7 @@
 mod commands;
 mod models;
 mod scanners;
+mod database;
 
 use commands::scan::{ScanState, start_scan, get_scan_status, list_scans, get_scan_report};
 use commands::collaboration::{export_scan_data, deduplicate_import_data, import_scan_data};
@@ -18,6 +19,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(
+            tauri_plugin_sql::Builder::default()
+                .add_migrations("sqlite:redforge.db", database::get_migrations())
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             start_scan,
             get_scan_status,
