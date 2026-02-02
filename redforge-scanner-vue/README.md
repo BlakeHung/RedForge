@@ -327,13 +327,10 @@ cd src-tauri && cargo test
 
 ---
 
-## 相關文檔
+## 相關專案
 
 - [主專案 README](../README.md)
-- [技術架構文件](../docs/ARCHITECTURE.md)
-- [UI/UX 設計指南](../docs/UI_UX_DESIGN.md)
-- [協作功能設計](../docs/COLLABORATION_FEATURES.md)
-- [離線協作功能](../docs/OFFLINE_COLLABORATION.md)
+- [React 版本（已凍結）](../redforge-scanner/README.md)
 
 ---
 

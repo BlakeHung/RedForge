@@ -194,12 +194,10 @@ npm run build
 
 ---
 
-## 相關連結
+## 相關專案
 
 - [主專案 README](../README.md)
-- [Vue 版本（主要開發）](../redforge-scanner-vue/)
-- [完整文檔](../docs/)
-- [技術架構](../docs/ARCHITECTURE.md)
+- [Vue 版本（主要開發）](../redforge-scanner-vue/README.md)
 
 ---
 

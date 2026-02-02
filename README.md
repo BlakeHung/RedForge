@@ -109,17 +109,11 @@ npm run tauri build
 ```
 RedForge/
 ├── README.md                    # 本文件
-├── docs/                        # 完整文檔
-│   ├── README.md               # 文檔索引
-│   ├── ARCHITECTURE.md         # 技術架構
-│   ├── FEATURE_ROADMAP.md      # 功能路線圖
-│   ├── UI_UX_DESIGN.md         # UI/UX 設計指南
-│   └── COLLABORATION_FEATURES.md
 ├── redforge-scanner-vue/        # Vue 版本（主要開發）
 │   ├── src/                    # 前端源碼
 │   ├── src-tauri/              # Rust 後端
 │   └── package.json
-└── redforge-scanner/            # React 版本（備用）
+└── redforge-scanner/            # React 版本（已凍結）
 ```
 
 ---
@@ -226,16 +220,10 @@ RedForge/
 
 ---
 
-## 文檔
+## 相關專案
 
-完整文檔請參閱 [docs/README.md](./docs/README.md)：
-
-- [系統總體規劃](./docs/DEVCORE_SYSTEM_PLANNING.md)
-- [技術架構文件](./docs/ARCHITECTURE.md)
-- [功能路線圖](./docs/FEATURE_ROADMAP.md)
-- [UI/UX 設計指南](./docs/UI_UX_DESIGN.md)
-- [協作功能設計](./docs/COLLABORATION_FEATURES.md)
-- [離線協作功能](./docs/OFFLINE_COLLABORATION.md)
+- [Vue 版本（主要開發）](./redforge-scanner-vue/README.md)
+- [React 版本（已凍結）](./redforge-scanner/README.md)
 
 ---
 
